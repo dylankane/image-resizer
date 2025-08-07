@@ -1,0 +1,2 @@
+input/father-son-paint.png 800x400 top left top-left
+input/father-son-paint.png
