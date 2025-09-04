@@ -20,7 +20,6 @@ def get_crop_box(src_w, src_h, target_w, target_h, focus):
         new_width = target_w
         new_height = int(target_w / aspect_ratio_input)
 
-    # default center
     left = (new_width - target_w) // 2
     top = (new_height - target_h) // 2
 
@@ -28,7 +27,6 @@ def get_crop_box(src_w, src_h, target_w, target_h, focus):
         left = 0
     elif 'right' in focus:
         left = new_width - target_w
-
     if 'top' in focus:
         top = 0
     elif 'bottom' in focus:
@@ -36,7 +34,7 @@ def get_crop_box(src_w, src_h, target_w, target_h, focus):
 
     return new_width, new_height, left, top
 
-def convert_image(image_path, width=None, height=None, crop_focuses=None):
+def convert_image(image_path, width=None, height=None, crop_focuses=None, keep_aspect=False):
     filename = os.path.basename(image_path)
     name, ext = os.path.splitext(filename)
 
@@ -45,7 +43,13 @@ def convert_image(image_path, width=None, height=None, crop_focuses=None):
         original_width, original_height = img.size
 
         if width and height:
-            # Stretched
+            if keep_aspect:
+                resized = img.resize((width, height))
+                out_path = os.path.join("output", f"{name}-{width}x{height}.webp")
+                resized.save(out_path, "WEBP", quality=85)
+                print(f"[IMG] Saved {out_path}")
+                return
+
             stretched = img.resize((width, height))
             out_stretch = os.path.join("output", f"{name}-{width}x{height}-stretch.webp")
             stretched.save(out_stretch, "WEBP", quality=85)
@@ -74,7 +78,6 @@ def get_video_crop_filter(width, height, focus):
         x = "0"
     elif 'right' in focus:
         x = f"iw-iw*{width}/{height}"
-
     if 'top' in focus:
         y = "0"
     elif 'bottom' in focus:
@@ -85,13 +88,24 @@ def get_video_crop_filter(width, height, focus):
         f"crop={width}:{height}:{x}:{y}"
     )
 
-def convert_video(video_path, width=None, height=None, crop_focuses=None):
+def convert_video(video_path, width=None, height=None, crop_focuses=None, keep_aspect=False):
     filename = os.path.basename(video_path)
     name, ext = os.path.splitext(filename)
 
     try:
         if width and height:
-            # Stretched
+            if keep_aspect:
+                out_path = os.path.join("output", f"{name}-{width}x{height}.webm")
+                cmd = [
+                    "ffmpeg", "-i", video_path,
+                    "-vf", f"fps=30,scale={width}:{height}",
+                    "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0",
+                    "-auto-alt-ref", "0", "-an", out_path
+                ]
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+                print(f"[VID] Saved {out_path}")
+                return
+
             out_stretch = os.path.join("output", f"{name}-{width}x{height}-stretch.webm")
             cmd_stretch = [
                 "ffmpeg", "-i", video_path,
@@ -144,6 +158,7 @@ def main():
             filepath = parts[0]
             width = height = None
             crop_focuses = ['center']
+            keep_aspect = False
 
             if len(parts) >= 2:
                 try:
@@ -153,9 +168,11 @@ def main():
                     continue
 
             if len(parts) >= 3:
-                requested = [p.lower() for p in parts[2:] if p.lower() in valid_crop_focuses]
-                if requested:
-                    crop_focuses = requested
+                for p in parts[2:]:
+                    if p == "-aspect":
+                        keep_aspect = True
+                    elif p.lower() in valid_crop_focuses:
+                        crop_focuses.append(p.lower())
 
             if not os.path.isfile(filepath):
                 print(f"File not found: {filepath}")
@@ -163,9 +180,9 @@ def main():
 
             ext = os.path.splitext(filepath)[1].lower()
             if ext in accepted_image_exts:
-                convert_image(filepath, width, height, crop_focuses)
+                convert_image(filepath, width, height, crop_focuses, keep_aspect)
             elif ext in accepted_video_exts:
-                convert_video(filepath, width, height, crop_focuses)
+                convert_video(filepath, width, height, crop_focuses, keep_aspect)
             else:
                 print(f"Unsupported file type: {filepath}")
 
